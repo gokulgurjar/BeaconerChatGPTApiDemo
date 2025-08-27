@@ -1,0 +1,25 @@
+﻿@model ChatGPTApiDemo.Models.ChatGptRequest
+
+<h2>Chat with GPT</h2>
+
+<form asp-action="Index" method="post" enctype="multipart/form-data">
+    <div>
+        <label>1) Choose Files:</label>
+        <input type="file" name="Files" multiple />
+    </div>
+
+    <div>
+        <label>2) Enter Prompt:</label>
+        <textarea name="Prompt" rows="5">@Model.Prompt</textarea>
+    </div>
+
+    <button type="submit">Submit</button>
+</form>
+
+@if (!string.IsNullOrEmpty(Model.Response))
+{
+    <h3>3) GPT Response:</h3>
+    <div style="white-space: pre-wrap; border: 1px solid #ccc; padding: 10px;">
+        @Model.Response
+    </div>
+}

@@ -1,0 +1,35 @@
+﻿@model ChatGPTApiDemo.Models.ChatGptRequest
+<div class="container mt-5">
+    <div class="card shadow-lg p-4">
+        <h2 class="text-center mb-4">Chat GPT - AI File Analysis</h2>
+
+        <form asp-action="Index" method="post" enctype="multipart/form-data">
+            <!-- File Upload -->
+            <div class="mb-3">
+                <label class="form-label fw-bold">Choose Files:</label>
+                <input type="file" name="Files" class="form-control" multiple />
+                <small class="text-muted">Supported: .xlsx, .docx, .pdf</small>
+            </div>
+
+            <!-- Prompt -->
+            <div class="mb-3">
+                <label class="form-label fw-bold">Your Prompt:</label>
+                <textarea name="Prompt" rows="5" class="form-control" placeholder="Ask your question here...">@Model.Prompt</textarea>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="d-grid">
+                <button type="submit" class="btn btn-primary btn-lg">Analyze & Get Response</button>
+            </div>
+        </form>
+
+        <!-- Response Section -->
+       @*  @if (!string.IsNullOrEmpty(Model.Response))
+        {
+            <div class="mt-4 p-3 bg-light border rounded">
+                <h4 class="fw-bold">Response:</h4>
+                <div class="text-dark">@Model.Response</div>
+            </div>
+        } *@
+    </div>
+</div>
