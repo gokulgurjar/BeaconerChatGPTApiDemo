@@ -24,8 +24,8 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(10);
     serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
 });
-builder.WebHost.UseUrls("http://0.0.0.0:" + (Environment.GetEnvironmentVariable("PORT") ?? "8080"));
-
+builder.WebHost.UseUrls("http://68.183.205.62:" + (Environment.GetEnvironmentVariable("PORT") ?? "8080"));
+//68.183.205.62
 var app = builder.Build();
 
 
