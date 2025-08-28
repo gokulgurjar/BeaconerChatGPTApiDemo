@@ -32,7 +32,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
 
 ////builder.WebHost.UseUrls("http://68.183.205.62:" + (Environment.GetEnvironmentVariable("PORT") ?? "8080"));
-//68.183.205.62
+////68.183.205.62
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 builder.WebHost.UseUrls($"http://*:{port}");
