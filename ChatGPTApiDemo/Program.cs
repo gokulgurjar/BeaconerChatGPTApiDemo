@@ -14,18 +14,23 @@ builder.Services.AddSingleton(new OpenAIFileClient(apiKey));
 
 builder.Services.AddHttpClient();
 
-builder.Services.Configure<IISServerOptions>(options =>
-{
-    options.MaxRequestBodySize = int.MaxValue;
-});
+//builder.Services.Configure<IISServerOptions>(options =>
+//{
+//    options.MaxRequestBodySize = int.MaxValue;
+//});
 
-builder.WebHost.ConfigureKestrel(serverOptions =>
-{
-    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(10);
-    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
-});
-builder.WebHost.UseUrls("http://68.183.205.62:" + (Environment.GetEnvironmentVariable("PORT") ?? "8080"));
+//builder.WebHost.ConfigureKestrel(serverOptions =>
+//{
+//    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(10);
+//    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
+//});
+////builder.WebHost.UseUrls("http://68.183.205.62:" + (Environment.GetEnvironmentVariable("PORT") ?? "8080"));
 //68.183.205.62
+
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://*:{port}");
+
+
 var app = builder.Build();
 
 
