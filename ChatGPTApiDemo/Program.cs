@@ -6,6 +6,11 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 var apiKey = builder.Configuration["OpenAI:ApiKey"];
+if (string.IsNullOrEmpty(apiKey))
+{
+    Console.WriteLine("WARNING: Beaconer OpenAI API key is not set!");
+}
+Console.WriteLine("API Key Loaded: " + (string.IsNullOrEmpty(apiKey) ? "NOT FOUND" : "FOUND"));
 // Register OpenAI services
 //builder.Services.AddSingleton(new ChatClient(model: "gpt-4o-mini", apiKey: apiKey));
 builder.Services.AddSingleton(new ChatClient(model: "gpt-5", apiKey: apiKey));
@@ -39,10 +44,12 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-    app.UseHsts();
+    app.UseHsts();  
+    
+    
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
