@@ -1,11 +1,16 @@
 using OpenAI.Chat;
 using OpenAI.Files;
+using System.Net.Http;
+using OpenAI;
+using Azure.Core.Pipeline;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+
 var apiKey = builder.Configuration["OpenAI:ApiKey"];
+
 if (string.IsNullOrEmpty(apiKey))
 {
     Console.WriteLine("WARNING: Beaconer OpenAI API key is not set!");
@@ -13,7 +18,19 @@ if (string.IsNullOrEmpty(apiKey))
 Console.WriteLine("API Key Loaded: " + (string.IsNullOrEmpty(apiKey) ? "NOT FOUND" : "FOUND"));
 // Register OpenAI services
 //builder.Services.AddSingleton(new ChatClient(model: "gpt-4o-mini", apiKey: apiKey));
-builder.Services.AddSingleton(new ChatClient(model: "gpt-5", apiKey: apiKey));
+//builder.Services.AddSingleton(new ChatClient(model: "gpt-5", apiKey: apiKey));
+
+var options = new OpenAIClientOptions
+{
+    NetworkTimeout = TimeSpan.FromMinutes(15) // Increase timeout to 5 minutes
+};
+System.ClientModel.ApiKeyCredential apiKeyCredential = new System.ClientModel.ApiKeyCredential(apiKey);
+var openAiClient = new OpenAIClient(apiKeyCredential, options);
+var chatClient = openAiClient.GetChatClient("gpt-5");
+
+// Register as Singleton
+builder.Services.AddSingleton(chatClient);
+
 
 builder.Services.AddSingleton(new OpenAIFileClient(apiKey));
 
@@ -34,8 +51,8 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 ////builder.WebHost.UseUrls("http://68.183.205.62:" + (Environment.GetEnvironmentVariable("PORT") ?? "8080"));
 ////68.183.205.62
 
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-builder.WebHost.UseUrls($"http://*:{port}");
+//var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+//builder.WebHost.UseUrls($"http://*:{port}");
 
 
 var app = builder.Build();
