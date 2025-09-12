@@ -1,13 +1,15 @@
+using Azure.Core.Pipeline;
+using Microsoft.AspNetCore.Http.Features;
+using OpenAI;
 using OpenAI.Chat;
 using OpenAI.Files;
 using System.Net.Http;
-using OpenAI;
-using Azure.Core.Pipeline;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+
 
 var apiKey = builder.Configuration["OpenAI:ApiKey"];
 
@@ -47,6 +49,10 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
 });
 
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 100_000_000; // 100 MB
+});
 
 ////builder.WebHost.UseUrls("http://68.183.205.62:" + (Environment.GetEnvironmentVariable("PORT") ?? "8080"));
 ////68.183.205.62
