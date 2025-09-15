@@ -4,6 +4,7 @@ using DocumentFormat.OpenXml.Bibliography;
 using DocumentFormat.OpenXml.InkML;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using DocxTemplater;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing.Template;
 using Newtonsoft.Json;
@@ -94,8 +95,8 @@ namespace ChatGPTApiDemo.Controllers
             {
                 var bodyText = string.Join(" ", wordDoc.MainDocumentPart.Document.Body
                     .Descendants<Text>()
-                    .Select(t => t.Text));
-
+                    .Select(t => t.Text));               
+      
                 Regex regex = new Regex(@"\{\{(.*?)\}\}");
                 return regex.Matches(bodyText)
                             .Cast<Match>()
@@ -105,27 +106,54 @@ namespace ChatGPTApiDemo.Controllers
             }
         }
 
+        //public string GetReturnJson1(List<string> placeholders)
+        //{
+        //    var cleaned = placeholders
+        //        .Select(p => p
+        //            .Replace("\r", "")   // remove carriage returns
+        //            .Replace("\n", "")   // remove newlines
+        //            .Replace("\u00A0", " ") // replace non-breaking space with normal space
+        //            .Trim()              // trim start/end spaces
+        //        )
+        //        .Select(p => string.Join(" ", p.Split(  // collapse multiple spaces
+        //            new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)))
+        //        .Distinct();
+
+        //    // build dictionary with cleaned placeholders
+        //    var dict = cleaned.ToDictionary(p => p, p => "");
+
+        //    // convert to JSON
+        //    return System.Text.Json.JsonSerializer.Serialize(dict, new JsonSerializerOptions
+        //    {
+        //        WriteIndented = true
+        //    });
+        //}
+
         public string GetReturnJson1(List<string> placeholders)
         {
             var cleaned = placeholders
-                .Select(p => p
-                    .Replace("\r", "")   // remove carriage returns
-                    .Replace("\n", "")   // remove newlines
-                    .Replace("\u00A0", " ") // replace non-breaking space with normal space
-                    .Trim()              // trim start/end spaces
-                )
-                .Select(p => string.Join(" ", p.Split(  // collapse multiple spaces
-                    new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)))
+                .Select(p => NormalizePlaceholder(p))
                 .Distinct();
 
-            // build dictionary with cleaned placeholders
             var dict = cleaned.ToDictionary(p => p, p => "");
 
-            // convert to JSON
             return System.Text.Json.JsonSerializer.Serialize(dict, new JsonSerializerOptions
             {
                 WriteIndented = true
             });
+        }
+
+
+        private string NormalizePlaceholder(string input)
+        {
+            return string.Join(" ",
+                input
+                    .Replace("\r", "")
+                    .Replace("\n", "")
+                    .Replace("\u00A0", " ") // non-breaking space
+                    .Trim()
+                    .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            );
         }
 
 
