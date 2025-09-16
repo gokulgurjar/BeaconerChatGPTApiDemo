@@ -1,6 +1,8 @@
 ﻿using Azure.Core;
 using ChatGPTApiDemo.Models;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Bibliography;
+using DocumentFormat.OpenXml.Drawing.Diagrams;
 using DocumentFormat.OpenXml.InkML;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -12,9 +14,12 @@ using OpenAI;
 using OpenAI.Chat;
 using OpenAI.Files;
 using System.Data;
+using System.Diagnostics.Metrics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Table = DocumentFormat.OpenXml.Wordprocessing.Table;
+
 
 namespace ChatGPTApiDemo.Controllers
 {
@@ -95,8 +100,8 @@ namespace ChatGPTApiDemo.Controllers
             {
                 var bodyText = string.Join(" ", wordDoc.MainDocumentPart.Document.Body
                     .Descendants<Text>()
-                    .Select(t => t.Text));               
-      
+                    .Select(t => t.Text));
+
                 Regex regex = new Regex(@"\{\{(.*?)\}\}");
                 return regex.Matches(bodyText)
                             .Cast<Match>()
@@ -171,6 +176,29 @@ namespace ChatGPTApiDemo.Controllers
             return chunks;
         }
 
+        public class ControlGap
+        {
+            public string Domain { get; set; }
+            public string IssuesIdentified { get; set; }
+            public string Severity { get; set; }
+            public string Risk { get; set; }
+            public string CounterMeasure { get; set; }
+        }
+
+        public class ControlGapRoot
+        {
+            public List<ControlGap> ControlGaps { get; set; }
+        }
+
+        private static TableCell CreateCell(string text, bool bold = false)
+        {
+            Run run = new Run(new Text(text ?? ""));
+            if (bold) run.RunProperties = new RunProperties(new Bold());
+
+            Paragraph para = new Paragraph(run);
+            TableCell cell = new TableCell(para);
+            return cell;
+        }
 
 
         public async Task<IActionResult> Index(ChatGptRequest model)
@@ -245,7 +273,7 @@ namespace ChatGPTApiDemo.Controllers
             {
                 var response = await _chatClient.CompleteChatAsync(new[]
                 {
-                ChatMessage.CreateUserMessage($"Process this part:\n\n{chunk}")
+                    ChatMessage.CreateUserMessage($"Process this part:\n\n{chunk}")
         }, cancellationToken: cts.Token);
 
                 return response.Value.Content[0].Text ?? "";
@@ -290,261 +318,143 @@ namespace ChatGPTApiDemo.Controllers
                             Task:
                             1. Fill the JSON keys with appropriate values extracted from the given content text and return it with same key.
                             2. If a placeholder expects a Yes/No answer and no value is found in the content, set it to ""No"". 
+                            3. Analyze given content and create a Control Gaps table with these fields in JSON: 
+                               Domain, Issues Identified, Severity (High/Medium/Low), Risk, Counter Measure
+                                Example
+                                ControlGaps: 
+                                [ 
+                                {{ ""Domain"": """", ""Issues Identified"": """", ""Severity (High/Medium/Low)"": """", ""Risk"": """", ""Counter Measure"": """" }},
+                                {{ ""Domain"": """", ""Issues Identified"": """", ""Severity (High/Medium/Low)"": """", ""Risk"": """", ""Counter Measure"": """" }},
+                                {{ ""Domain"": """", ""Issues Identified"": """", ""Severity (High/Medium/Low)"": """", ""Risk"": """", ""Counter Measure"": """" }},
+                                ]
                             ";
-            //3.fill Control Gaps
-            //Domain Issues Identified Severity(High/ Medium / Low) 	Risk Counter Measure
-
+            
             var responseT = await _chatClient.CompleteChatAsync(new[]
             {
                 ChatMessage.CreateUserMessage(prompt)
             }, cancellationToken: cts.Token);
 
-            string jsonData = responseT.Value.Content[0].Text.Trim();            
+            string jsonData = responseT.Value.Content[0].Text.Trim();
             if (string.IsNullOrWhiteSpace(jsonData))
                 return BadRequest("JSON data is empty.");
-          
-            var replacements = JsonConvert.DeserializeObject<Dictionary<string, string>>(jsonData);          
+
+            Console.WriteLine(jsonData);
+
+            var dict = JsonConvert.DeserializeObject<Dictionary<string, object>>(jsonData);
+
+            var replacements = dict
+                .Where(kv => kv.Value is string)
+                .ToDictionary(kv => kv.Key, kv => kv.Value.ToString());
+
+
+            var root = JsonConvert.DeserializeObject<ControlGapRoot>(jsonData);
+
             byte[] fileBytes = System.IO.File.ReadAllBytes(filePathT);
-            using var ms = new MemoryStream(System.IO.File.ReadAllBytes(filePathT));
+            //using var ms = new MemoryStream(System.IO.File.ReadAllBytes(filePathT));
+            using var ms = new MemoryStream();   
+            ms.Write(fileBytes, 0, fileBytes.Length);
+            ms.Position = 0;
             using (WordprocessingDocument wordDoc = WordprocessingDocument.Open(ms, true))
             {
                 var body = wordDoc.MainDocumentPart.Document.Body;
 
                 foreach (var kvp in replacements)
                 {
-
-                    string placeholder = "{{" + kvp.Key.Replace("{", "").Replace("}", "") + "}}";  
+                    string placeholder = "{{" + kvp.Key.Replace("{", "").Replace("}", "") + "}}";
                     foreach (var text in body.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>())
                     {
+                        if (text.Text == "PrivacyScore")
+                        {
+                            text.Text = "{{PrivacyScore}}";
+                        }
+                        if (text.Text == "TestedControl")
+                        {
+                            text.Text = "{{TestedControl}}";
+                        }
+                        if (text.Text == "CriticalControl")
+                        {
+                            text.Text = "{{CriticalControl}}";
+                        }
+                        if (text.Text == "FailedControl")
+                        {
+                            text.Text = "{{FailedControl}}";
+                        }
+                        if (text.Text == "CritcalFailed")
+                        {
+                            text.Text = "{{CritcalFailed}}";
+                        }
+
                         if (text.Text.Contains(placeholder))
                         {
                             text.Text = text.Text.Replace(placeholder, kvp.Value ?? string.Empty);
                         }
-                        Console.WriteLine(placeholder + "\t" + kvp.Value);
+
                     }
-                }               
+                }
+
+                // === Append Control Gaps table at the end ===
+                if (root?.ControlGaps != null && root.ControlGaps.Any())
+                {
+                    // Title
+                    body.Append(new Paragraph(new Run(new Text("Control Gaps")))
+                    {
+                        ParagraphProperties = new ParagraphProperties(
+                            new Justification() { Val = JustificationValues.Left })
+                    });
+
+                    body.Append(new Paragraph(new Run(new Text("")))); // empty line
+
+                    Table table = new Table();
+
+                    // Add table borders
+                    TableProperties tblProps = new TableProperties(
+                        new TableBorders(
+                            new TopBorder { Val = BorderValues.Thick, Size = 4 },
+                            new BottomBorder { Val = BorderValues.Thick, Size = 4 },
+                            new LeftBorder { Val = BorderValues.Thick, Size = 4 },
+                            new RightBorder { Val = BorderValues.Thick, Size = 4 },
+                            new InsideHorizontalBorder { Val = BorderValues.Single, Size = 2 },
+                            new InsideVerticalBorder { Val = BorderValues.Single, Size = 2 }
+                        )
+                    );
+                    table.AppendChild(tblProps);
+
+                    // Header row
+                    TableRow headerRow = new TableRow();
+                    headerRow.Append(
+                        CreateCell("Domain", true),
+                        CreateCell("Issues Identified", true),
+                        CreateCell("Severity (High/Medium/Low)", true),
+                        CreateCell("Risk", true),
+                        CreateCell("Counter Measure", true)
+                    );
+                    table.Append(headerRow);
+
+                    // Data rows
+                    foreach (var gap in root.ControlGaps)
+                    {
+                        TableRow row = new TableRow();
+                        row.Append(
+                            CreateCell(gap.Domain),
+                            CreateCell(gap.IssuesIdentified),
+                            CreateCell(gap.Severity),
+                            CreateCell(gap.Risk),
+                            CreateCell(gap.CounterMeasure)
+                        );
+                        table.Append(row);
+                    }
+
+                    body.Append(table);
+                }
                 wordDoc.MainDocumentPart.Document.Save();
             }
-            ms.Position = 0;           
+
+            ms.Position = 0;
+            string fileName = $"Beaconer_Report_{DateTime.Now:yyyyMMdd_HHmmss}.docx";
+
             return File(ms.ToArray(),
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "Beaconer_Report_Updated.docx");
-
+                fileName);
         }
-
-
-
-
-
-
-
-
-        //public async Task<IActionResult> Index1(ChatGptRequest model)
-        //{
-
-        //    // 1. Handle file uploads and read content
-        //    var allFileContents = new StringBuilder();
-
-        //    if (model.Files != null && model.Files.Count > 0)
-        //    {
-        //        foreach (var file in model.Files)
-        //        {
-        //            var uploadPath = Path.Combine(_env.WebRootPath, "uploads");
-        //            Directory.CreateDirectory(uploadPath);
-
-        //            var filePath = Path.Combine(uploadPath, file.FileName);
-
-        //            using (var fs = new FileStream(filePath, FileMode.Create))
-        //            {
-        //                await file.CopyToAsync(fs);
-        //            }
-
-        //            // Read the content (text extraction for txt, docx, pdf etc.)
-        //            string fileContent = "";
-        //            if (Path.GetExtension(file.FileName).Equals(".txt", StringComparison.OrdinalIgnoreCase))
-        //            {
-        //                fileContent = await System.IO.File.ReadAllTextAsync(filePath);
-        //            }
-        //            if (Path.GetExtension(file.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
-        //            {
-        //                using (var workbook = new ClosedXML.Excel.XLWorkbook(filePath))
-        //                {
-        //                    StringBuilder sb = new StringBuilder();
-
-        //                    foreach (var worksheet in workbook.Worksheets)
-        //                    {
-        //                        sb.AppendLine($"--- Sheet: {worksheet.Name} ---");
-
-        //                        var range = worksheet.RangeUsed();
-        //                        if (range != null)
-        //                        {
-        //                            foreach (var row in range.Rows())
-        //                            {
-        //                                foreach (var cell in row.Cells())
-        //                                {
-        //                                    sb.Append(cell.Value.ToString() + "\t"); // Tab-separated
-        //                                }
-        //                                sb.AppendLine();
-        //                            }
-        //                        }
-
-        //                        sb.AppendLine(); // Add space between sheets
-        //                    }
-
-        //                    fileContent = sb.ToString();
-        //                }
-        //            }
-        //            else if (Path.GetExtension(file.FileName).Equals(".docx", StringComparison.OrdinalIgnoreCase))
-        //            {
-        //                using (var doc = WordprocessingDocument.Open(filePath, false))
-        //                {
-        //                    fileContent = doc.MainDocumentPart.Document.Body.InnerText;
-        //                }
-        //            }
-        //            else if (Path.GetExtension(file.FileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-        //            {
-        //                // Use iTextSharp or PdfPig or IronPDF to extract text
-        //                // Example using PdfPig:
-        //                using (var pdf = UglyToad.PdfPig.PdfDocument.Open(filePath))
-        //                {
-        //                    foreach (var page in pdf.GetPages())
-        //                    {
-        //                        fileContent += page.Text;
-        //                    }
-        //                }
-        //            }
-
-        //            allFileContents.AppendLine($"[File: {file.FileName}]");
-        //            allFileContents.AppendLine(fileContent);
-        //            allFileContents.AppendLine("--------------------------------------------------");
-        //        }
-        //    }
-
-        //    // 2. Combine file content with user prompt
-        //    string combinedPrompt = $"You are a helpful assistant. Analyze the following files and answer the user query.\n\n" +
-        //                            $"Files Content:\n{allFileContents}\n\n" +
-        //                            $"User Question:\n{model.Prompt}";
-
-
-        //    using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
-
-        //    // Split the huge prompt into chunks
-        //    var chunks = SplitByLength(combinedPrompt, 10000);
-
-        //    // Create all tasks at once
-        //    var tasks = chunks.Select(async chunk =>
-        //    {
-        //        var response = await _chatClient.CompleteChatAsync(new[]
-        //        {
-        //            ChatMessage.CreateUserMessage($"Process this part:\n\n{chunk}")
-        //        }, cancellationToken: cts.Token);
-
-        //        return response.Value.Content[0].Text ?? "";
-        //    }).ToList();
-
-        //    // Run in parallel
-        //    var allResponses = await Task.WhenAll(tasks);
-
-        //    // Merge results
-        //    var finalSummary = string.Join("\n---\n", allResponses);
-
-
-        //    model.Response = finalSummary;
-
-
-
-        //    string filePathT = string.Empty;
-
-        //    if (model.FileTemplate != null && model.FileTemplate.Length > 0)
-        //    {
-        //        var templateName = Path.GetFileName(model.FileTemplate.FileName);
-        //        var templatePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "templates", templateName);
-        //        Directory.CreateDirectory(Path.GetDirectoryName(templatePath));
-        //        using (var stream = new FileStream(templatePath, FileMode.Create))
-        //        {
-        //            await model.FileTemplate.CopyToAsync(stream);
-        //        }
-        //        filePathT = templatePath;
-        //    }
-        //    if (string.IsNullOrWhiteSpace(filePathT))
-        //    {
-        //        return BadRequest("Template file is required.");
-        //    }
-
-        //    // ✅ Extract placeholders from the file
-        //    var placeholders = GetPlaceholders(filePathT);
-
-        //    string content1 = model.Response; 
-        //    string prompt = $@"
-        //                    You are given:
-
-        //                    Content:
-        //                    {content1}
-
-        //                    Placeholders:
-        //                    {string.Join(", ", placeholders)}
-
-        //                    Task:
-        //                    - Extract values from the Content for each placeholder.
-        //                    - Return the result as valid JSON with key-value pairs.
-        //                    - Keys must exactly match the placeholder names.
-        //                    - If a value is not found, add key with blank value.
-        //                    - If a placeholder expects Yes/No and no value is found, set it to ""No"".
-        //                    - All placeholders must be included in the JSON response.
-        //                    ";
-
-
-        //    var responseT = await _chatClient.CompleteChatAsync(new[]
-        //    {
-        //        ChatMessage.CreateUserMessage(prompt)
-        //    }, cancellationToken: cts.Token);
-
-
-        //    string jsonData = responseT.Value.Content[0].Text.Trim();
-
-        //    if (string.IsNullOrWhiteSpace(jsonData))
-        //        return BadRequest("JSON data is empty.");
-
-        //    // ✅ Convert JSON into Dictionary
-        //    var replacements = JsonConvert.DeserializeObject<Dictionary<string, string>>(jsonData);
-
-        //    // ✅ Open the template file in a MemoryStream for modification
-        //    byte[] fileBytes = System.IO.File.ReadAllBytes(filePathT);
-
-        //    // ✅ Use original docx file (not text-based fake)
-        //    using var ms = new MemoryStream(System.IO.File.ReadAllBytes(filePathT));
-
-        //    // ✅ Apply replacements
-        //    using (WordprocessingDocument wordDoc = WordprocessingDocument.Open(ms, true))
-        //    {
-        //        var body = wordDoc.MainDocumentPart.Document.Body;
-
-        //        foreach (var kvp in replacements)
-        //        {
-
-        //            string placeholder = "{{" + kvp.Key.Replace("{", "").Replace("}", "") + "}}";  //$"{{{{kvp.Key}}}}"; // Example: {{Name}}
-        //            foreach (var text in body.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>())
-        //            {
-        //                if (text.Text.Contains(placeholder))
-        //                {
-        //                    text.Text = text.Text.Replace(placeholder, kvp.Value ?? string.Empty); 
-        //                }
-        //                Console.WriteLine(placeholder + "\t" + kvp.Value);
-        //            }
-        //        }
-
-        //        // ✅ Save updated document
-        //        wordDoc.MainDocumentPart.Document.Save();
-        //    }
-        //    ms.Position = 0;
-        //    // ✅ Return updated file as download
-        //    return File(ms.ToArray(),
-        //        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        //        "Beaconer_Report_Updated.docx");
-        //}
-
-
-
-
     }
 }
